@@ -68,10 +68,12 @@ const resolveFibSettings = (drawing: DrawingObject): FibSettings => ({
   levels: drawing.fib?.levels?.length ? drawing.fib.levels : defaultFibSettings.levels,
 });
 
-const makeFibLabel = (settings: FibSettings, level: number, price: number) => {
+const visibleFibLevels = (drawing: DrawingObject) => resolveFibSettings(drawing).levels.filter((level) => level.visible);
+
+const makeFibLabel = (settings: FibSettings, level: number, price?: number) => {
   const parts: string[] = [];
   if (settings.showPercents) parts.push(`${(level * 100).toFixed(level % 1 === 0 ? 0 : 1)}%`);
-  if (settings.showPrices) parts.push(price.toFixed(2));
+  if (settings.showPrices && price !== undefined) parts.push(price.toFixed(2));
   return parts.length ? parts.join('  ') : '';
 };
 
@@ -120,12 +122,12 @@ const drawFibGuide = (
   labelX: number,
 ) => {
   const settings = resolveFibSettings(drawing);
-  const visibleLevels = settings.levels.filter((level) => level.visible);
+  const levels = visibleFibLevels(drawing);
 
   ctx.save();
   ctx.setLineDash([]);
-  for (let i = 0; i < visibleLevels.length; i += 1) {
-    const level = visibleLevels[i];
+  for (let i = 0; i < levels.length; i += 1) {
+    const level = levels[i];
     const y = ys[i];
     if (!Number.isFinite(y)) continue;
 
@@ -163,6 +165,140 @@ const calculateFibRange = (settings: FibSettings, anchorA: [number, number], anc
   if (startX > endX) [startX, endX] = [endX, startX];
   const labelX = settings.labelsPosition === 'right' ? endX - 6 : startX + 6;
   return { startX, endX, labelX };
+};
+
+const interpolate = (a: [number, number], b: [number, number], t: number): [number, number] => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+
+const drawFibChannel = (ctx: CanvasRenderingContext2D, drawing: DrawingObject, pts: [number, number][]) => {
+  if (pts.length < 3) return;
+  const settings = resolveFibSettings(drawing);
+  const [a, b, c] = pts;
+  const levels = visibleFibLevels(drawing);
+  const offset: [number, number] = [c[0] - a[0], c[1] - a[1]];
+  const labelAnchor = settings.labelsPosition === 'right' ? b : a;
+
+  ctx.save();
+  drawLine(ctx, a, b);
+  drawLine(ctx, c, [b[0] + offset[0], b[1] + offset[1]]);
+  ctx.setLineDash([4, 5]);
+  drawLine(ctx, interpolate(a, c, 0.5), interpolate(b, [b[0] + offset[0], b[1] + offset[1]], 0.5));
+  ctx.restore();
+
+  for (let i = 0; i < levels.length; i += 1) {
+    const level = levels[i];
+    const start = interpolate(a, c, settings.reverse ? 1 - level.value : level.value);
+    const end = interpolate(b, [b[0] + offset[0], b[1] + offset[1]], settings.reverse ? 1 - level.value : level.value);
+
+    if (settings.fillBackground && i > 0) {
+      const prev = levels[i - 1];
+      const prevStart = interpolate(a, c, settings.reverse ? 1 - prev.value : prev.value);
+      const prevEnd = interpolate(b, [b[0] + offset[0], b[1] + offset[1]], settings.reverse ? 1 - prev.value : prev.value);
+      ctx.save();
+      ctx.globalAlpha = i % 2 === 0 ? 0.035 : 0.06;
+      ctx.fillStyle = level.color ?? drawing.style.color;
+      ctx.beginPath();
+      ctx.moveTo(prevStart[0], prevStart[1]);
+      ctx.lineTo(prevEnd[0], prevEnd[1]);
+      ctx.lineTo(end[0], end[1]);
+      ctx.lineTo(start[0], start[1]);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.strokeStyle = level.color ?? drawing.style.color;
+    ctx.globalAlpha = level.value === 0 || level.value === 1 ? 0.95 : 0.72;
+    ctx.lineWidth = level.value === 0 || level.value === 1 || level.value === 0.618 ? 1.5 : 1;
+    drawLine(ctx, start, end);
+    ctx.restore();
+
+    const labelPoint = settings.labelsPosition === 'right' ? end : start;
+    drawLabelBox(ctx, makeFibLabel(settings, level.value), labelPoint[0] + (settings.labelsPosition === 'right' ? -6 : 6), labelPoint[1] - 4, settings.labelsPosition === 'right' ? 'right' : 'left');
+  }
+
+  drawLabelBox(ctx, 'Fib Channel', labelAnchor[0] + 8, labelAnchor[1] - 8);
+};
+
+const drawFibTimeZone = (ctx: CanvasRenderingContext2D, drawing: DrawingObject, pts: [number, number][], size: { width: number; height: number }) => {
+  if (pts.length < 2) return;
+  const settings = resolveFibSettings(drawing);
+  const [a, b] = pts;
+  const base = b[0] - a[0];
+  const levels = visibleFibLevels(drawing);
+
+  drawLine(ctx, a, b);
+  levels.forEach((level) => {
+    const x = a[0] + base * level.value;
+    if (x < -50 || x > size.width + 50) return;
+    ctx.save();
+    ctx.strokeStyle = level.color ?? drawing.style.color;
+    ctx.globalAlpha = level.value === 0 || level.value === 1 ? 0.95 : 0.68;
+    drawLine(ctx, [x, 0], [x, size.height]);
+    ctx.restore();
+    drawLabelBox(ctx, makeFibLabel(settings, level.value), x + 6, size.height - 20);
+  });
+};
+
+const drawFibFan = (ctx: CanvasRenderingContext2D, drawing: DrawingObject, pts: [number, number][], size: { width: number; height: number }) => {
+  if (pts.length < 2) return;
+  const settings = resolveFibSettings(drawing);
+  const [a, b] = pts;
+  const levels = visibleFibLevels(drawing);
+  drawLine(ctx, a, b);
+
+  levels.forEach((level) => {
+    const target = interpolate(a, b, settings.reverse ? 1 - level.value : level.value);
+    const [start, end] = getExtendedLineEndpoints(a, target, size.width, settings.extendRight ? 'ray' : 'segment');
+    ctx.save();
+    ctx.strokeStyle = level.color ?? drawing.style.color;
+    ctx.globalAlpha = level.value === 0 || level.value === 1 ? 0.95 : 0.68;
+    drawLine(ctx, start, end);
+    ctx.restore();
+    drawLabelBox(ctx, makeFibLabel(settings, level.value), target[0] + 8, target[1] - 5);
+  });
+};
+
+const drawFibArcs = (ctx: CanvasRenderingContext2D, drawing: DrawingObject, pts: [number, number][]) => {
+  if (pts.length < 2) return;
+  const settings = resolveFibSettings(drawing);
+  const [a, b] = pts;
+  const baseRadius = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  drawLine(ctx, a, b);
+
+  visibleFibLevels(drawing).forEach((level) => {
+    const radius = baseRadius * level.value;
+    if (radius <= 0) return;
+    ctx.save();
+    ctx.strokeStyle = level.color ?? drawing.style.color;
+    ctx.globalAlpha = level.value === 1 ? 0.95 : 0.68;
+    ctx.beginPath();
+    ctx.arc(a[0], a[1], radius, 0, Math.PI, b[1] < a[1]);
+    ctx.stroke();
+    ctx.restore();
+    drawLabelBox(ctx, makeFibLabel(settings, level.value), a[0] + radius + 6, a[1] - 4);
+  });
+};
+
+const drawFibCircles = (ctx: CanvasRenderingContext2D, drawing: DrawingObject, pts: [number, number][]) => {
+  if (pts.length < 2) return;
+  const settings = resolveFibSettings(drawing);
+  const [a, b] = pts;
+  const baseRadius = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  drawLine(ctx, a, b);
+
+  visibleFibLevels(drawing).forEach((level) => {
+    const radius = baseRadius * level.value;
+    if (radius <= 0) return;
+    ctx.save();
+    ctx.strokeStyle = level.color ?? drawing.style.color;
+    ctx.globalAlpha = level.value === 1 ? 0.95 : 0.62;
+    ctx.beginPath();
+    ctx.arc(a[0], a[1], radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    drawLabelBox(ctx, makeFibLabel(settings, level.value), a[0] + radius + 6, a[1] - 4);
+  });
 };
 
 export const renderDrawing = (
@@ -280,10 +416,10 @@ export const renderDrawing = (
       const [a, b] = pts;
       const [p1, p2] = drawing.points;
       const { startX, endX, labelX } = calculateFibRange(settings, a, b, size.width);
-      const visibleLevels = settings.levels.filter((level) => level.visible);
+      const levels = visibleFibLevels(drawing);
       const fromPrice = settings.reverse ? p2.price : p1.price;
       const toPrice = settings.reverse ? p1.price : p2.price;
-      const prices = visibleLevels.map((level) => fromPrice + (toPrice - fromPrice) * level.value);
+      const prices = levels.map((level) => fromPrice + (toPrice - fromPrice) * level.value);
       const ys = prices.map((price) => toXY(p2.time, price)?.[1] ?? Number.NaN);
 
       ctx.save();
@@ -301,8 +437,8 @@ export const renderDrawing = (
       const [a, b, c] = pts;
       const range = settings.reverse ? p1.price - p2.price : p2.price - p1.price;
       const { startX, endX, labelX } = calculateFibRange(settings, a, c, size.width);
-      const visibleLevels = settings.levels.filter((level) => level.visible);
-      const prices = visibleLevels.map((level) => p3.price + range * level.value);
+      const levels = visibleFibLevels(drawing);
+      const prices = levels.map((level) => p3.price + range * level.value);
       const ys = prices.map((price) => toXY(p3.time, price)?.[1] ?? Number.NaN);
 
       ctx.save();
@@ -313,6 +449,21 @@ export const renderDrawing = (
       drawFibGuide(ctx, drawing, prices, ys, startX, endX, labelX);
       break;
     }
+    case 'fibChannel':
+      drawFibChannel(ctx, drawing, pts);
+      break;
+    case 'fibTimeZone':
+      drawFibTimeZone(ctx, drawing, pts, size);
+      break;
+    case 'fibFan':
+      drawFibFan(ctx, drawing, pts, size);
+      break;
+    case 'fibArcs':
+      drawFibArcs(ctx, drawing, pts);
+      break;
+    case 'fibCircles':
+      drawFibCircles(ctx, drawing, pts);
+      break;
     case 'elliottImpulse': {
       const labels = ['', '1', '2', '3', '4', '5'];
       pts.forEach((p, i) => {
