@@ -32,15 +32,19 @@ export function DrawingLayer({ chart, series }: { chart: IChartApi | null; serie
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [draft, setDraft] = useState<DrawingPoint[]>([]);
+  const [previewPoint, setPreviewPoint] = useState<DrawingPoint | null>(null);
   const [dragging, setDragging] = useState<DragState | null>(null);
+  const [hoveredDrawingId, setHoveredDrawingId] = useState<string | null>(null);
 
   const drawings = useReplayStore((s) => s.drawings);
   const activeTool = useReplayStore((s) => s.activeTool);
   const symbol = useReplayStore((s) => s.symbol);
   const timeframe = useReplayStore((s) => s.timeframe);
+  const selectedDrawingId = useReplayStore((s) => s.selectedDrawingId);
   const addDrawing = useReplayStore((s) => s.addDrawing);
   const setSelected = useReplayStore((s) => s.setSelectedDrawing);
   const updateDrawing = useReplayStore((s) => s.updateDrawing);
+  const removeDrawing = useReplayStore((s) => s.removeDrawing);
 
   const toXY = useMemo(
     () =>
@@ -71,8 +75,15 @@ export function DrawingLayer({ chart, series }: { chart: IChartApi | null; serie
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      drawings.forEach((d) => renderDrawing(ctx, d, toXY, { width: canvas.width, height: canvas.height }));
-      if (draft.length) {
+
+      drawings.forEach((drawing) => {
+        const highlighted = hoveredDrawingId === drawing.id;
+        const selected = selectedDrawingId === drawing.id;
+        renderDrawing(ctx, drawing, toXY, { width: canvas.width, height: canvas.height }, { highlighted, selected });
+      });
+
+      const draftPoints = previewPoint ? [...draft, previewPoint] : draft;
+      if (draftPoints.length) {
         renderDrawing(
           ctx,
           {
@@ -81,16 +92,18 @@ export function DrawingLayer({ chart, series }: { chart: IChartApi | null; serie
             symbol,
             createdOnTimeframe: timeframe,
             visibleOn: [timeframe],
-            points: draft,
+            points: draftPoints,
             style: defaultStyle,
             locked: false,
             hidden: false,
           },
           toXY,
           { width: canvas.width, height: canvas.height },
+          { highlighted: false, selected: false, showHandles: false },
         );
       }
     };
+
     const schedule = () => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(paint);
@@ -104,7 +117,7 @@ export function DrawingLayer({ chart, series }: { chart: IChartApi | null; serie
       window.removeEventListener('resize', resize);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(schedule);
     };
-  }, [drawings, draft, toXY, chart, activeTool, symbol, timeframe]);
+  }, [drawings, draft, previewPoint, toXY, chart, activeTool, symbol, timeframe, hoveredDrawingId, selectedDrawingId]);
 
   const hitTest = (x: number, y: number): { id: string; target: 'handle' | 'body'; index?: number } | null => {
     for (let dIdx = drawings.length - 1; dIdx >= 0; dIdx -= 1) {
@@ -192,9 +205,10 @@ export function DrawingLayer({ chart, series }: { chart: IChartApi | null; serie
     return null;
   };
 
-  const forwardToChart = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  const forwardToChartStart = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+
     canvas.style.pointerEvents = 'none';
     const target = document.elementFromPoint(e.clientX, e.clientY);
     if (target) {
@@ -211,9 +225,12 @@ export function DrawingLayer({ chart, series }: { chart: IChartApi | null; serie
         }),
       );
     }
-    setTimeout(() => {
-      if (canvas) canvas.style.pointerEvents = 'auto';
-    }, 0);
+
+    const restore = () => {
+      canvas.style.pointerEvents = 'auto';
+      window.removeEventListener('pointerup', restore, true);
+    };
+    window.addEventListener('pointerup', restore, true);
   };
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -228,9 +245,10 @@ export function DrawingLayer({ chart, series }: { chart: IChartApi | null; serie
       const hit = hitTest(x, y);
       if (!hit) {
         setSelected(null);
-        forwardToChart(e);
+        forwardToChartStart(e);
         return;
       }
+
       setSelected(hit.id);
       if (hit.target === 'handle' && hit.index !== undefined) setDragging({ type: 'handle', id: hit.id, index: hit.index });
       else setDragging({ type: 'body', id: hit.id, last: domain });
@@ -240,6 +258,7 @@ export function DrawingLayer({ chart, series }: { chart: IChartApi | null; serie
     const tool = getTool(activeTool);
     if (!tool) return;
     const next = [...draft, domain];
+
     if (next.length >= tool.pointsRequired) {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       addDrawing({
@@ -256,15 +275,33 @@ export function DrawingLayer({ chart, series }: { chart: IChartApi | null; serie
       });
       setSelected(id);
       setDraft([]);
-    } else setDraft(next);
+      setPreviewPoint(null);
+    } else {
+      setDraft(next);
+    }
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!dragging || !chart || !series) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const domain = coordinateToDomain(chart, series, e.clientX - rect.left, e.clientY - rect.top);
-    if (!domain) return;
+    if (!chart || !series) return;
 
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const domain = coordinateToDomain(chart, series, x, y);
+
+    if (!dragging) {
+      const hit = hitTest(x, y);
+      setHoveredDrawingId(hit?.id ?? null);
+
+      if (domain && activeTool !== 'cursor' && draft.length > 0) {
+        setPreviewPoint(domain);
+      } else if (previewPoint) {
+        setPreviewPoint(null);
+      }
+      return;
+    }
+
+    if (!domain) return;
     const drawing = drawings.find((d) => d.id === dragging.id);
     if (!drawing || drawing.locked) return;
 
@@ -282,9 +319,42 @@ export function DrawingLayer({ chart, series }: { chart: IChartApi | null; serie
     setDragging({ ...dragging, last: domain });
   };
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setDraft([]);
+        setPreviewPoint(null);
+        setDragging(null);
+        return;
+      }
+
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedDrawingId) {
+        event.preventDefault();
+        removeDrawing(selectedDrawingId);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [removeDrawing, selectedDrawingId]);
+
+  useEffect(() => {
+    setDraft([]);
+    setPreviewPoint(null);
+  }, [activeTool]);
+
   return (
     <div className="drawing-host" ref={hostRef}>
-      <canvas ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={() => setDragging(null)} />
+      <canvas
+        ref={canvasRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={() => setDragging(null)}
+        onPointerLeave={() => {
+          setHoveredDrawingId(null);
+          setPreviewPoint(null);
+        }}
+      />
     </div>
   );
 }
