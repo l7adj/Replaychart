@@ -14,7 +14,7 @@ const makeDefaultFibSettings = (): FibSettings => ({
   fillBackground: true,
 });
 
-const isFibTool = (type: string) => type === 'fibRetracement' || type === 'fibExtension';
+const isFibTool = (type: string) => type.startsWith('fib');
 
 export function PropertiesPanel() {
   const selectedId = useReplayStore((s) => s.selectedDrawingId);
