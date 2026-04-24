@@ -1,7 +1,7 @@
 import type { DrawingObject } from '../types';
 
-const fibRetracementLevels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
-const fibExtensionLevels = [0, 0.382, 0.618, 1, 1.272, 1.618, 2.618];
+const fibRetracementLevels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.414, 1.618, 2, 2.618, 3.618, 4.236];
+const fibExtensionLevels = [0, 0.382, 0.618, 1, 1.272, 1.414, 1.618, 2, 2.618, 3.618, 4.236];
 
 const lineDash = (dash: string) => {
   if (dash === 'dashed') return [8, 6];
@@ -29,6 +29,54 @@ const drawArrow = (ctx: CanvasRenderingContext2D, a: [number, number], b: [numbe
 };
 
 const formatPct = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+const fibLabel = (level: number, price: number) => `${(level * 100).toFixed(level % 1 === 0 ? 0 : 1)}%  ${price.toFixed(2)}`;
+
+const drawLabelBox = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number) => {
+  const paddingX = 5;
+  const metrics = ctx.measureText(text);
+  const width = metrics.width + paddingX * 2;
+  ctx.save();
+  ctx.globalAlpha = 0.86;
+  ctx.fillStyle = '#10182b';
+  ctx.fillRect(x - paddingX, y - 11, width, 16);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#dbe6ff';
+  ctx.fillText(text, x, y + 1);
+  ctx.restore();
+};
+
+const drawFibGuide = (
+  ctx: CanvasRenderingContext2D,
+  levels: number[],
+  prices: number[],
+  ys: number[],
+  startX: number,
+  endX: number,
+  labelX: number,
+) => {
+  ctx.save();
+  ctx.setLineDash([]);
+  for (let i = 0; i < ys.length; i += 1) {
+    const y = ys[i];
+    if (!Number.isFinite(y)) continue;
+
+    if (i > 0 && i < ys.length) {
+      const prevY = ys[i - 1];
+      if (Number.isFinite(prevY)) {
+        ctx.save();
+        ctx.globalAlpha = i % 2 === 0 ? 0.035 : 0.06;
+        ctx.fillRect(startX, Math.min(prevY, y), endX - startX, Math.abs(prevY - y));
+        ctx.restore();
+      }
+    }
+
+    ctx.globalAlpha = levels[i] === 0 || levels[i] === 1 ? 0.95 : 0.72;
+    ctx.lineWidth = levels[i] === 0 || levels[i] === 1 || levels[i] === 0.618 ? 1.5 : 1;
+    drawLine(ctx, [startX, y], [endX, y]);
+    drawLabelBox(ctx, fibLabel(levels[i], prices[i]), Math.min(labelX, endX - 110), y - 4);
+  }
+  ctx.restore();
+};
 
 export const renderDrawing = (
   ctx: CanvasRenderingContext2D,
@@ -134,25 +182,38 @@ export const renderDrawing = (
     case 'fibRetracement': {
       if (!pts[1]) break;
       const [a, b] = pts;
-      fibRetracementLevels.forEach((lvl) => {
-        const y = a[1] + (b[1] - a[1]) * lvl;
-        drawLine(ctx, [Math.min(a[0], b[0]), y], [Math.max(a[0], b[0]), y]);
-        const price = drawing.points[0].price + (drawing.points[1].price - drawing.points[0].price) * lvl;
-        ctx.fillText(`${lvl.toFixed(3)} ${price.toFixed(2)}`, Math.max(a[0], b[0]) + 8, y + 4);
-      });
+      const [p1, p2] = drawing.points;
+      const startX = Math.min(a[0], b[0]);
+      const endX = size.width;
+      const labelX = Math.max(a[0], b[0]) + 8;
+      const prices = fibRetracementLevels.map((lvl) => p1.price + (p2.price - p1.price) * lvl);
+      const ys = prices.map((price) => toXY(p2.time, price)?.[1] ?? Number.NaN);
+
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      drawLine(ctx, a, b);
+      drawLine(ctx, [startX, a[1]], [startX, b[1]]);
+      ctx.restore();
+      drawFibGuide(ctx, fibRetracementLevels, prices, ys, startX, endX, labelX);
       break;
     }
     case 'fibExtension': {
-      if (pts.length < 3) break;
-      const [a, b, c] = drawing.points;
-      const base = b.price - a.price;
-      fibExtensionLevels.forEach((lvl) => {
-        const projected = c.price + base * lvl;
-        const y = toXY(c.time, projected)?.[1];
-        if (!y) return;
-        drawLine(ctx, [0, y], [size.width, y]);
-        ctx.fillText(`${lvl.toFixed(3)} ${projected.toFixed(2)}`, 6, y - 4);
-      });
+      if (drawing.points.length < 3 || pts.length < 3) break;
+      const [p1, p2, p3] = drawing.points;
+      const [a, b, c] = pts;
+      const range = p2.price - p1.price;
+      const startX = Math.min(a[0], b[0], c[0]);
+      const endX = size.width;
+      const labelX = c[0] + 8;
+      const prices = fibExtensionLevels.map((lvl) => p3.price + range * lvl);
+      const ys = prices.map((price) => toXY(p3.time, price)?.[1] ?? Number.NaN);
+
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      drawLine(ctx, a, b);
+      drawLine(ctx, b, c);
+      ctx.restore();
+      drawFibGuide(ctx, fibExtensionLevels, prices, ys, startX, endX, labelX);
       break;
     }
     case 'elliottImpulse': {
