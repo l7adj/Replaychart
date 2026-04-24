@@ -16,6 +16,28 @@ const drawLine = (ctx: CanvasRenderingContext2D, a: [number, number], b: [number
   ctx.stroke();
 };
 
+const getExtendedLineEndpoints = (
+  a: [number, number],
+  b: [number, number],
+  width: number,
+  mode: 'segment' | 'ray' | 'extended',
+): [[number, number], [number, number]] => {
+  if (mode === 'segment') return [a, b];
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  if (Math.abs(dx) < 0.0001) {
+    if (mode === 'ray') return [a, [a[0], b[1] >= a[1] ? 10000 : -10000]];
+    return [[a[0], -10000], [a[0], 10000]];
+  }
+  const slope = dy / dx;
+  const yAt = (x: number) => a[1] + slope * (x - a[0]);
+  if (mode === 'ray') {
+    const endX = b[0] >= a[0] ? width : 0;
+    return [a, [endX, yAt(endX)]];
+  }
+  return [[0, yAt(0)], [width, yAt(width)]];
+};
+
 const drawArrow = (ctx: CanvasRenderingContext2D, a: [number, number], b: [number, number]) => {
   drawLine(ctx, a, b);
   const angle = Math.atan2(b[1] - a[1], b[0] - a[0]);
@@ -31,18 +53,38 @@ const drawArrow = (ctx: CanvasRenderingContext2D, a: [number, number], b: [numbe
 const formatPct = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
 const fibLabel = (level: number, price: number) => `${(level * 100).toFixed(level % 1 === 0 ? 0 : 1)}%  ${price.toFixed(2)}`;
 
-const drawLabelBox = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number) => {
+const drawLabelBox = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, align: 'left' | 'right' = 'left') => {
   const paddingX = 5;
   const metrics = ctx.measureText(text);
   const width = metrics.width + paddingX * 2;
+  const boxX = align === 'right' ? x - width + paddingX : x - paddingX;
   ctx.save();
-  ctx.globalAlpha = 0.86;
+  ctx.globalAlpha = 0.88;
   ctx.fillStyle = '#10182b';
-  ctx.fillRect(x - paddingX, y - 11, width, 16);
+  ctx.fillRect(boxX, y - 11, width, 16);
   ctx.globalAlpha = 1;
   ctx.fillStyle = '#dbe6ff';
-  ctx.fillText(text, x, y + 1);
+  ctx.fillText(text, boxX + paddingX, y + 1);
   ctx.restore();
+};
+
+const drawPriceTag = (ctx: CanvasRenderingContext2D, price: number, y: number, width: number) => {
+  drawLabelBox(ctx, price.toFixed(2), width - 6, y - 4, 'right');
+};
+
+const drawMeasurementLabel = (
+  ctx: CanvasRenderingContext2D,
+  a: [number, number],
+  b: [number, number],
+  p1: { price: number; time: number },
+  p2: { price: number; time: number },
+) => {
+  const delta = p2.price - p1.price;
+  const pct = p1.price === 0 ? 0 : (delta / p1.price) * 100;
+  const minutes = Math.abs(p2.time - p1.time) / 60;
+  const bars = minutes < 60 ? `${minutes.toFixed(0)}m` : minutes < 1440 ? `${(minutes / 60).toFixed(1)}h` : `${(minutes / 1440).toFixed(1)}d`;
+  const text = `${delta >= 0 ? '+' : ''}${delta.toFixed(2)} (${formatPct(pct)}) · ${bars}`;
+  drawLabelBox(ctx, text, (a[0] + b[0]) / 2 + 8, (a[1] + b[1]) / 2 - 8);
 };
 
 const drawFibGuide = (
@@ -106,18 +148,18 @@ export const renderDrawing = (
   }
 
   switch (drawing.type) {
-    case 'trendLine':
-      if (pts[1]) drawLine(ctx, pts[0], pts[1]);
+    case 'trendLine': {
+      if (!pts[1]) break;
+      drawLine(ctx, pts[0], pts[1]);
+      drawMeasurementLabel(ctx, pts[0], pts[1], drawing.points[0], drawing.points[1]);
       break;
+    }
     case 'ray':
     case 'extendedLine': {
       if (!pts[1]) break;
-      const [x1, y1] = pts[0];
-      const [x2, y2] = pts[1];
-      const slope = (y2 - y1) / ((x2 - x1) || 0.0001);
-      const startX = drawing.type === 'extendedLine' ? 0 : x1;
-      const endX = size.width;
-      drawLine(ctx, [startX, y1 + slope * (startX - x1)], [endX, y1 + slope * (endX - x1)]);
+      const [start, end] = getExtendedLineEndpoints(pts[0], pts[1], size.width, drawing.type === 'ray' ? 'ray' : 'extended');
+      drawLine(ctx, start, end);
+      drawMeasurementLabel(ctx, pts[0], pts[1], drawing.points[0], drawing.points[1]);
       break;
     }
     case 'horizontalLine':
@@ -125,11 +167,13 @@ export const renderDrawing = (
       const y = pts[0][1];
       const startX = drawing.type === 'horizontalRay' ? pts[0][0] : 0;
       drawLine(ctx, [startX, y], [size.width, y]);
+      drawPriceTag(ctx, drawing.points[0].price, y, size.width);
       break;
     }
     case 'verticalLine': {
       const x = pts[0][0];
       drawLine(ctx, [x, 0], [x, size.height]);
+      drawLabelBox(ctx, new Date(drawing.points[0].time * 1000).toLocaleString(), x + 6, size.height - 18);
       break;
     }
     case 'parallelChannel': {
@@ -137,14 +181,19 @@ export const renderDrawing = (
       const [a, b, c] = pts;
       const dx = b[0] - a[0];
       const dy = b[1] - a[1];
+      const d: [number, number] = [c[0] + dx, c[1] + dy];
       drawLine(ctx, a, b);
-      drawLine(ctx, c, [c[0] + dx, c[1] + dy]);
+      drawLine(ctx, c, d);
       ctx.save();
-      ctx.globalAlpha = 0.2;
+      ctx.setLineDash([4, 5]);
+      drawLine(ctx, [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2], [(b[0] + d[0]) / 2, (b[1] + d[1]) / 2]);
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = 0.12;
       ctx.beginPath();
       ctx.moveTo(a[0], a[1]);
       ctx.lineTo(b[0], b[1]);
-      ctx.lineTo(c[0] + dx, c[1] + dy);
+      ctx.lineTo(d[0], d[1]);
       ctx.lineTo(c[0], c[1]);
       ctx.closePath();
       if (drawing.style.fill) ctx.fill();
@@ -165,6 +214,7 @@ export const renderDrawing = (
         ctx.restore();
       }
       ctx.strokeRect(x, y, w, h);
+      drawLabelBox(ctx, `${Math.abs(drawing.points[1].price - drawing.points[0].price).toFixed(2)} range`, x + 6, y + 15);
       break;
     }
     case 'arrow':
@@ -262,7 +312,7 @@ export const renderDrawing = (
       drawLine(ctx, [a[0] - 10, b[1]], [a[0] + 10, b[1]]);
       const delta = drawing.points[1].price - drawing.points[0].price;
       const pct = (delta / drawing.points[0].price) * 100;
-      ctx.fillText(`${delta.toFixed(2)} (${formatPct(pct)})`, a[0] + 12, (a[1] + b[1]) / 2);
+      drawLabelBox(ctx, `${delta.toFixed(2)} (${formatPct(pct)})`, a[0] + 12, (a[1] + b[1]) / 2);
       break;
     }
     case 'dateRange': {
@@ -276,12 +326,12 @@ export const renderDrawing = (
       drawArrow(ctx, [b[0], bottom + 28], [a[0], bottom + 28]);
       const minutes = Math.abs(drawing.points[1].time - drawing.points[0].time) / 60;
       const label = minutes >= 1440 ? `${(minutes / 1440).toFixed(1)}d` : `${minutes.toFixed(0)}m`;
-      ctx.fillText(label, Math.min(a[0], b[0]) + Math.abs(a[0] - b[0]) / 2 - 10, bottom + 45);
+      drawLabelBox(ctx, label, Math.min(a[0], b[0]) + Math.abs(a[0] - b[0]) / 2 - 10, bottom + 45);
       break;
     }
     case 'textNote': {
       const text = drawing.text || 'Note';
-      ctx.fillText(text, pts[0][0], pts[0][1]);
+      drawLabelBox(ctx, text, pts[0][0], pts[0][1]);
       break;
     }
     default:
