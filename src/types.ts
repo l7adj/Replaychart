@@ -63,6 +63,7 @@ export interface SessionState {
   drawings: DrawingObject[];
   replayIndex: number;
   replaySpeed: number;
+  replayStartTime: number;
 }
 
 export interface ToolDefinition {

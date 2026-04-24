@@ -13,7 +13,7 @@ import { Toolbar } from './Toolbar';
 export function ChartWorkspace() {
   const [chart, setChart] = useState<IChartApi | null>(null);
   const [series, setSeries] = useState<ISeriesApi<'Candlestick'> | null>(null);
-  const [showSheet, setShowSheet] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<'tools' | 'objects' | 'replay' | 'properties' | null>(null);
 
   const symbol = useReplayStore((s) => s.symbol);
   const candles1m = useReplayStore((s) => s.candles1m);
@@ -25,11 +25,17 @@ export function ChartWorkspace() {
   const setTimeframe = useReplayStore((s) => s.setTimeframe);
   const addCustomTimeframe = useReplayStore((s) => s.addCustomTimeframe);
   const setReplayIndex = useReplayStore((s) => s.setReplayIndex);
+  const setReplayBounds = useReplayStore((s) => s.setReplayBounds);
   const saveSession = useReplayStore((s) => s.saveSession);
+  const drawings = useReplayStore((s) => s.drawings);
 
   const allFrames = [...DEFAULT_TIMEFRAMES, ...custom];
   const fullCandles = useMemo(() => aggregateCandles(candles1m, timeframe), [candles1m, timeframe]);
   const visibleCandles = useMemo(() => fullCandles.slice(0, replayIndex + 1), [fullCandles, replayIndex]);
+
+  useEffect(() => {
+    setReplayBounds(Math.max(0, fullCandles.length - 1), fullCandles);
+  }, [fullCandles, setReplayBounds]);
 
   useEffect(() => {
     if (!replayRunning) return;
@@ -41,7 +47,7 @@ export function ChartWorkspace() {
 
   useEffect(() => {
     saveSession();
-  }, [timeframe, custom, replayIndex, saveSession]);
+  }, [timeframe, custom, replayIndex, replaySpeed, drawings, saveSession]);
 
   return (
     <div className="workspace">
@@ -73,7 +79,13 @@ export function ChartWorkspace() {
       <div className="workspace-main">
         <Toolbar />
         <section className="chart-center">
-          <ChartView candles={visibleCandles} onReady={(c, s) => { setChart(c); setSeries(s); }} />
+          <ChartView
+            candles={visibleCandles}
+            onReady={(c, s) => {
+              setChart(c);
+              setSeries(s);
+            }}
+          />
           <DrawingLayer chart={chart} series={series} />
         </section>
         <aside className="right-panel">
@@ -82,12 +94,34 @@ export function ChartWorkspace() {
         </aside>
       </div>
 
-      <ReplayControls max={Math.max(0, fullCandles.length - 1)} />
+      <div id="replay-controls-anchor">
+        <ReplayControls max={Math.max(0, fullCandles.length - 1)} candlesForFrame={fullCandles} />
+      </div>
 
       <nav className="mobile-nav">
-        <button onClick={() => setShowSheet(true)}>Tools</button>
+        <button onClick={() => setMobilePanel('tools')}>Tools</button>
+        <button onClick={() => setMobilePanel('objects')}>Objects</button>
+        <button
+          onClick={() => {
+            setMobilePanel('replay');
+            document.getElementById('replay-controls-anchor')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }}
+        >
+          Replay
+        </button>
+        <button onClick={() => setMobilePanel('properties')}>Properties</button>
       </nav>
-      <MobileToolSheet open={showSheet} onClose={() => setShowSheet(false)} />
+
+      <MobileToolSheet open={mobilePanel === 'tools'} onClose={() => setMobilePanel(null)} />
+      {mobilePanel === 'objects' && (
+        <div className="mobile-sheet"><ObjectTree /></div>
+      )}
+      {mobilePanel === 'replay' && (
+        <div className="mobile-sheet"><ReplayControls max={Math.max(0, fullCandles.length - 1)} candlesForFrame={fullCandles} /></div>
+      )}
+      {mobilePanel === 'properties' && (
+        <div className="mobile-sheet"><PropertiesPanel /></div>
+      )}
     </div>
   );
 }

@@ -11,11 +11,11 @@ export default function App() {
   const setLoadedData = useReplayStore((s) => s.setLoadedData);
   const loadSession = useReplayStore((s) => s.loadSession);
 
-  const loadChart = async (symbol: SymbolName, startDate: string, depth: number) => {
+  const loadChart = async (symbol: SymbolName, startDate: string, depthDays: number) => {
     setLoading(true);
     loadSession();
-    const { candles, source } = await fetchBinance1mCandles(symbol, startDate, depth);
-    setLoadedData(symbol, candles, source);
+    const { candles, source, replayStartTime } = await fetchBinance1mCandles(symbol, startDate, depthDays);
+    setLoadedData(symbol, candles, source, replayStartTime);
     setLoading(false);
   };
 

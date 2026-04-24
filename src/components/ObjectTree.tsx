@@ -1,4 +1,5 @@
 import { useReplayStore } from '../lib/store';
+import { getTool } from '../tools/toolRegistry';
 
 export function ObjectTree() {
   const drawings = useReplayStore((s) => s.drawings);
@@ -12,11 +13,11 @@ export function ObjectTree() {
       <h3>Object Tree</h3>
       {drawings.map((d) => (
         <div key={d.id} className={`row ${selected === d.id ? 'active' : ''}`} onClick={() => setSelected(d.id)}>
-          <span>{d.type}</span>
+          <span>{getTool(d.type)?.label ?? d.type}</span>
           <div>
-            <button onClick={() => update(d.id, { hidden: !d.hidden })}>{d.hidden ? 'Show' : 'Hide'}</button>
-            <button onClick={() => update(d.id, { locked: !d.locked })}>{d.locked ? 'Unlock' : 'Lock'}</button>
-            <button onClick={() => remove(d.id)}>Delete</button>
+            <button onClick={(e) => { e.stopPropagation(); update(d.id, { hidden: !d.hidden }); }}>{d.hidden ? 'Show' : 'Hide'}</button>
+            <button onClick={(e) => { e.stopPropagation(); update(d.id, { locked: !d.locked }); }}>{d.locked ? 'Unlock' : 'Lock'}</button>
+            <button onClick={(e) => { e.stopPropagation(); remove(d.id); }}>Delete</button>
           </div>
         </div>
       ))}

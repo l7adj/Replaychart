@@ -3,13 +3,13 @@ import type { SymbolName } from '../types';
 
 interface Props {
   loading: boolean;
-  onLoad: (symbol: SymbolName, startDate: string, depth: number) => Promise<void>;
+  onLoad: (symbol: SymbolName, startDate: string, depthDays: number) => Promise<void>;
 }
 
 export function PreloadScreen({ loading, onLoad }: Props) {
   const [symbol, setSymbol] = useState<SymbolName>('BTCUSDT');
   const [startDate, setStartDate] = useState(() => new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString().slice(0, 16));
-  const [depth, setDepth] = useState(1000);
+  const [depthDays, setDepthDays] = useState(7);
 
   return (
     <div className="preload-screen">
@@ -31,17 +31,16 @@ export function PreloadScreen({ loading, onLoad }: Props) {
         </label>
 
         <label>
-          Data Depth
-          <input
-            type="number"
-            value={depth}
-            min={100}
-            max={5000}
-            onChange={(e) => setDepth(Number(e.target.value))}
-          />
+          Data Depth (days)
+          <select value={depthDays} onChange={(e) => setDepthDays(Number(e.target.value))}>
+            <option value={3}>3 أيام</option>
+            <option value={7}>7 أيام</option>
+            <option value={14}>14 يوم</option>
+            <option value={30}>30 يوم</option>
+          </select>
         </label>
 
-        <button disabled={loading} onClick={() => onLoad(symbol, startDate, depth)}>
+        <button disabled={loading} onClick={() => onLoad(symbol, startDate, depthDays)}>
           {loading ? 'Loading...' : 'Load Chart'}
         </button>
       </div>
