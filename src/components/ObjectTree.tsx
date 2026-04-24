@@ -15,6 +15,7 @@ export function ObjectTree() {
         <div key={d.id} className={`row ${selected === d.id ? 'active' : ''}`} onClick={() => setSelected(d.id)}>
           <span>{getTool(d.type)?.label ?? d.type}</span>
           <div>
+            <button onClick={(e) => { e.stopPropagation(); setSelected(d.id); }}>Select</button>
             <button onClick={(e) => { e.stopPropagation(); update(d.id, { hidden: !d.hidden }); }}>{d.hidden ? 'Show' : 'Hide'}</button>
             <button onClick={(e) => { e.stopPropagation(); update(d.id, { locked: !d.locked }); }}>{d.locked ? 'Unlock' : 'Lock'}</button>
             <button onClick={(e) => { e.stopPropagation(); remove(d.id); }}>Delete</button>

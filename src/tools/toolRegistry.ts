@@ -1,7 +1,7 @@
 import type { ToolDefinition } from '../types';
 
 export const TOOLS: ToolDefinition[] = [
-  { type: 'cursor', label: 'Cursor', category: 'favorites', pointsRequired: 0 },
+  { type: 'cursor', label: 'Select', category: 'favorites', pointsRequired: 0 },
   { type: 'trendLine', label: 'Trend Line', category: 'trend', pointsRequired: 2 },
   { type: 'ray', label: 'Ray', category: 'trend', pointsRequired: 2 },
   { type: 'extendedLine', label: 'Extended Line', category: 'trend', pointsRequired: 2 },
