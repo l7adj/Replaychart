@@ -16,6 +16,20 @@ const drawLine = (ctx: CanvasRenderingContext2D, a: [number, number], b: [number
   ctx.stroke();
 };
 
+const drawArrow = (ctx: CanvasRenderingContext2D, a: [number, number], b: [number, number]) => {
+  drawLine(ctx, a, b);
+  const angle = Math.atan2(b[1] - a[1], b[0] - a[0]);
+  const length = 13;
+  ctx.beginPath();
+  ctx.moveTo(b[0], b[1]);
+  ctx.lineTo(b[0] - length * Math.cos(angle - Math.PI / 6), b[1] - length * Math.sin(angle - Math.PI / 6));
+  ctx.moveTo(b[0], b[1]);
+  ctx.lineTo(b[0] - length * Math.cos(angle + Math.PI / 6), b[1] - length * Math.sin(angle + Math.PI / 6));
+  ctx.stroke();
+};
+
+const formatPct = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+
 export const renderDrawing = (
   ctx: CanvasRenderingContext2D,
   drawing: DrawingObject,
@@ -35,6 +49,7 @@ export const renderDrawing = (
   ctx.lineWidth = drawing.style.width + (selected ? 1 : 0);
   ctx.globalAlpha = drawing.style.opacity;
   ctx.setLineDash(lineDash(drawing.style.dash));
+  ctx.font = '12px Inter, system-ui, sans-serif';
 
   const pts = drawing.points.map((p) => toXY(p.time, p.price)).filter(Boolean) as [number, number][];
   if (!pts.length) {
@@ -69,6 +84,25 @@ export const renderDrawing = (
       drawLine(ctx, [x, 0], [x, size.height]);
       break;
     }
+    case 'parallelChannel': {
+      if (pts.length < 3) break;
+      const [a, b, c] = pts;
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      drawLine(ctx, a, b);
+      drawLine(ctx, c, [c[0] + dx, c[1] + dy]);
+      ctx.save();
+      ctx.globalAlpha = 0.2;
+      ctx.beginPath();
+      ctx.moveTo(a[0], a[1]);
+      ctx.lineTo(b[0], b[1]);
+      ctx.lineTo(c[0] + dx, c[1] + dy);
+      ctx.lineTo(c[0], c[1]);
+      ctx.closePath();
+      if (drawing.style.fill) ctx.fill();
+      ctx.restore();
+      break;
+    }
     case 'rectangleZone': {
       if (!pts[1]) break;
       const [a, b] = pts;
@@ -83,6 +117,18 @@ export const renderDrawing = (
         ctx.restore();
       }
       ctx.strokeRect(x, y, w, h);
+      break;
+    }
+    case 'arrow':
+      if (pts[1]) drawArrow(ctx, pts[0], pts[1]);
+      break;
+    case 'path':
+    case 'brush': {
+      if (pts.length < 2) break;
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i += 1) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.stroke();
       break;
     }
     case 'fibRetracement': {
@@ -145,6 +191,31 @@ export const renderDrawing = (
       ctx.fillStyle = drawing.style.color;
       ctx.fillText(drawing.type === 'longPosition' ? 'LONG' : 'SHORT', x + 8, top + 14);
       ctx.strokeRect(x, top, w, bottom - top);
+      break;
+    }
+    case 'priceRange': {
+      if (!pts[1]) break;
+      const [a, b] = pts;
+      drawLine(ctx, [a[0], a[1]], [a[0], b[1]]);
+      drawLine(ctx, [a[0] - 10, a[1]], [a[0] + 10, a[1]]);
+      drawLine(ctx, [a[0] - 10, b[1]], [a[0] + 10, b[1]]);
+      const delta = drawing.points[1].price - drawing.points[0].price;
+      const pct = (delta / drawing.points[0].price) * 100;
+      ctx.fillText(`${delta.toFixed(2)} (${formatPct(pct)})`, a[0] + 12, (a[1] + b[1]) / 2);
+      break;
+    }
+    case 'dateRange': {
+      if (!pts[1]) break;
+      const [a, b] = pts;
+      const top = Math.min(a[1], b[1]);
+      const bottom = Math.max(a[1], b[1]);
+      drawLine(ctx, [a[0], top], [a[0], bottom]);
+      drawLine(ctx, [b[0], top], [b[0], bottom]);
+      drawArrow(ctx, [a[0], bottom + 18], [b[0], bottom + 18]);
+      drawArrow(ctx, [b[0], bottom + 28], [a[0], bottom + 28]);
+      const minutes = Math.abs(drawing.points[1].time - drawing.points[0].time) / 60;
+      const label = minutes >= 1440 ? `${(minutes / 1440).toFixed(1)}d` : `${minutes.toFixed(0)}m`;
+      ctx.fillText(label, Math.min(a[0], b[0]) + Math.abs(a[0] - b[0]) / 2 - 10, bottom + 45);
       break;
     }
     case 'textNote': {
