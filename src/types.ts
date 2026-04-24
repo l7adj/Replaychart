@@ -26,6 +26,23 @@ export interface DrawingStyle {
   extendLeft?: boolean;
 }
 
+export interface FibLevelSetting {
+  value: number;
+  visible: boolean;
+  color?: string;
+}
+
+export interface FibSettings {
+  levels: FibLevelSetting[];
+  extendLeft: boolean;
+  extendRight: boolean;
+  reverse: boolean;
+  showPrices: boolean;
+  showPercents: boolean;
+  labelsPosition: 'left' | 'right';
+  fillBackground: boolean;
+}
+
 export type ToolType =
   | 'cursor'
   | 'trendLine'
@@ -60,6 +77,7 @@ export interface DrawingObject {
   locked: boolean;
   hidden: boolean;
   text?: string;
+  fib?: FibSettings;
 }
 
 export interface SessionState {
