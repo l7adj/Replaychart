@@ -35,6 +35,7 @@ export function DrawingLayer({ chart, series }: { chart: IChartApi | null; serie
   const [hoverPoint, setHoverPoint] = useState<DrawingPoint | null>(null);
   const [dragging, setDragging] = useState<DragState | null>(null);
   const [cursorArmed, setCursorArmed] = useState(false);
+  const [hoveredDrawingId, setHoveredDrawingId] = useState<string | null>(null);
 
   const drawings = useReplayStore((s) => s.drawings);
   const activeTool = useReplayStore((s) => s.activeTool);
@@ -42,6 +43,8 @@ export function DrawingLayer({ chart, series }: { chart: IChartApi | null; serie
   const timeframe = useReplayStore((s) => s.timeframe);
   const addDrawing = useReplayStore((s) => s.addDrawing);
   const setSelected = useReplayStore((s) => s.setSelectedDrawing);
+  const selectedDrawingId = useReplayStore((s) => s.selectedDrawingId);
+  const removeDrawing = useReplayStore((s) => s.removeDrawing);
   const updateDrawing = useReplayStore((s) => s.updateDrawing);
 
   const toXY = useMemo(
@@ -161,7 +164,9 @@ export function DrawingLayer({ chart, series }: { chart: IChartApi | null; serie
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      drawings.forEach((d) => renderDrawing(ctx, d, toXY, { width: canvas.width, height: canvas.height }));
+      drawings.forEach((d) =>
+        renderDrawing(ctx, d, toXY, { width: canvas.width, height: canvas.height }, { selected: selectedDrawingId === d.id, hovered: hoveredDrawingId === d.id }),
+      );
 
       const previewPoints = hoverPoint && draft.length ? [...draft, hoverPoint] : draft;
       if (previewPoints.length) {
@@ -199,7 +204,7 @@ export function DrawingLayer({ chart, series }: { chart: IChartApi | null; serie
       window.removeEventListener('resize', resize);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(schedule);
     };
-  }, [drawings, draft, hoverPoint, toXY, chart, activeTool, symbol, timeframe]);
+  }, [drawings, draft, hoverPoint, toXY, chart, activeTool, symbol, timeframe, hoveredDrawingId, selectedDrawingId]);
 
   useEffect(() => {
     if (activeTool !== 'cursor') {
@@ -215,11 +220,22 @@ export function DrawingLayer({ chart, series }: { chart: IChartApi | null; serie
         return;
       }
       const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+      setHoveredDrawingId(hit?.id ?? null);
       setCursorArmed(Boolean(hit));
     };
     window.addEventListener('pointermove', onMove);
     return () => window.removeEventListener('pointermove', onMove);
   }, [activeTool, chart, series, dragging, hitTest]);
+
+  useEffect(() => {
+    const onDelete = (e: KeyboardEvent) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedDrawingId) {
+        removeDrawing(selectedDrawingId);
+      }
+    };
+    window.addEventListener('keydown', onDelete);
+    return () => window.removeEventListener('keydown', onDelete);
+  }, [removeDrawing, selectedDrawingId]);
 
   useEffect(() => {
     if (activeTool === 'cursor') {
@@ -301,6 +317,12 @@ export function DrawingLayer({ chart, series }: { chart: IChartApi | null; serie
 
     if (activeTool !== 'cursor' && draft.length) {
       setHoverPoint(domain);
+      return;
+    }
+
+    if (activeTool === 'cursor') {
+      const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+      setHoveredDrawingId(hit?.id ?? null);
     }
   };
 
@@ -316,6 +338,7 @@ export function DrawingLayer({ chart, series }: { chart: IChartApi | null; serie
         onPointerUp={() => setDragging(null)}
         onPointerLeave={() => {
           if (!dragging) setHoverPoint(null);
+          setHoveredDrawingId(null);
         }}
       />
     </div>

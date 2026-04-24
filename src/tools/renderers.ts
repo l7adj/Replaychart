@@ -21,12 +21,13 @@ export const renderDrawing = (
   drawing: DrawingObject,
   toXY: (time: number, price: number) => [number, number] | null,
   size: { width: number; height: number },
+  options?: { selected?: boolean; hovered?: boolean },
 ) => {
   if (drawing.hidden) return;
   ctx.save();
   ctx.strokeStyle = drawing.style.color;
   ctx.fillStyle = drawing.style.color;
-  ctx.lineWidth = drawing.style.width;
+  ctx.lineWidth = drawing.style.width + (options?.selected ? 1 : 0);
   ctx.globalAlpha = drawing.style.opacity;
   ctx.setLineDash(lineDash(drawing.style.dash));
 
@@ -147,11 +148,17 @@ export const renderDrawing = (
       break;
   }
 
-  if (!drawing.locked) {
+  if ((options?.selected || options?.hovered) && !drawing.locked) {
     pts.forEach(([x, y]) => {
+      ctx.save();
+      ctx.fillStyle = '#0f1420';
+      ctx.strokeStyle = drawing.style.color;
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.arc(x, y, 5, 0, Math.PI * 2);
       ctx.fill();
+      ctx.stroke();
+      ctx.restore();
     });
   }
 
