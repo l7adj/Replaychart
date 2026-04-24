@@ -21,12 +21,18 @@ export const renderDrawing = (
   drawing: DrawingObject,
   toXY: (time: number, price: number) => [number, number] | null,
   size: { width: number; height: number },
+  options?: { highlighted?: boolean; selected?: boolean; showHandles?: boolean },
 ) => {
   if (drawing.hidden) return;
+
+  const highlighted = !!options?.highlighted;
+  const selected = !!options?.selected;
+  const shouldShowHandles = options?.showHandles ?? (selected || highlighted);
+
   ctx.save();
   ctx.strokeStyle = drawing.style.color;
   ctx.fillStyle = drawing.style.color;
-  ctx.lineWidth = drawing.style.width;
+  ctx.lineWidth = drawing.style.width + (selected ? 1 : 0);
   ctx.globalAlpha = drawing.style.opacity;
   ctx.setLineDash(lineDash(drawing.style.dash));
 
@@ -46,8 +52,8 @@ export const renderDrawing = (
       const [x1, y1] = pts[0];
       const [x2, y2] = pts[1];
       const slope = (y2 - y1) / ((x2 - x1) || 0.0001);
-      const endX = drawing.type === 'ray' ? size.width : size.width;
       const startX = drawing.type === 'extendedLine' ? 0 : x1;
+      const endX = size.width;
       drawLine(ctx, [startX, y1 + slope * (startX - x1)], [endX, y1 + slope * (endX - x1)]);
       break;
     }
@@ -70,7 +76,12 @@ export const renderDrawing = (
       const y = Math.min(a[1], b[1]);
       const w = Math.abs(a[0] - b[0]);
       const h = Math.abs(a[1] - b[1]);
-      if (drawing.style.fill) ctx.fillRect(x, y, w, h);
+      if (drawing.style.fill) {
+        ctx.save();
+        ctx.globalAlpha = Math.min(0.12, drawing.style.opacity);
+        ctx.fillRect(x, y, w, h);
+        ctx.restore();
+      }
       ctx.strokeRect(x, y, w, h);
       break;
     }
@@ -99,17 +110,20 @@ export const renderDrawing = (
       break;
     }
     case 'elliottImpulse': {
+      const labels = ['', '1', '2', '3', '4', '5'];
       pts.forEach((p, i) => {
         if (i > 0) drawLine(ctx, pts[i - 1], p);
-        ctx.fillText(i.toString(), p[0] + 6, p[1] - 6);
+        const label = labels[i];
+        if (label) ctx.fillText(label, p[0] + 6, p[1] - 6);
       });
       break;
     }
     case 'elliottCorrection': {
-      const labels = ['S', 'A', 'B', 'C'];
+      const labels = ['', 'A', 'B', 'C'];
       pts.forEach((p, i) => {
         if (i > 0) drawLine(ctx, pts[i - 1], p);
-        ctx.fillText(labels[i] ?? '', p[0] + 6, p[1] - 6);
+        const label = labels[i];
+        if (label) ctx.fillText(label, p[0] + 6, p[1] - 6);
       });
       break;
     }
@@ -142,12 +156,33 @@ export const renderDrawing = (
       break;
   }
 
-  if (!drawing.locked) {
+  if (!drawing.locked && shouldShowHandles) {
+    const handleColor = selected ? '#ffffff' : '#f3f7ff';
+    const borderColor = selected ? '#2f6fff' : drawing.style.color;
     pts.forEach(([x, y]) => {
+      ctx.save();
+      ctx.fillStyle = handleColor;
+      ctx.strokeStyle = borderColor;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([]);
       ctx.beginPath();
-      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.arc(x, y, selected ? 5 : 4, 0, Math.PI * 2);
       ctx.fill();
+      ctx.stroke();
+      ctx.restore();
     });
+  }
+
+  if (highlighted && !selected) {
+    ctx.save();
+    ctx.globalAlpha = 0.15;
+    ctx.strokeStyle = drawing.style.color;
+    ctx.lineWidth = drawing.style.width + 4;
+    ctx.setLineDash([]);
+    if (pts.length > 1) {
+      for (let i = 1; i < pts.length; i += 1) drawLine(ctx, pts[i - 1], pts[i]);
+    }
+    ctx.restore();
   }
 
   ctx.restore();
