@@ -1,12 +1,24 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ReplayChart Pro</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ReplayChart Pro</title>
+  <style>
+    html,body{margin:0;height:100%;background:#0b111d;color:#dbe6ff;font-family:Arial,system-ui,sans-serif}
+    .wrap{min-height:100%;display:grid;place-items:center;padding:20px}
+    .card{width:min(620px,94vw);background:#10182b;border:1px solid #28334e;border-radius:18px;padding:24px;box-shadow:0 25px 70px #0008}
+    h1{margin:0 0 10px;font-size:32px}.ok{color:#22ab94;font-weight:700}.muted{color:#94a3b8;line-height:1.8}.box{margin-top:16px;padding:14px;border:1px solid #2b3754;border-radius:12px;background:#172036;direction:ltr;text-align:left}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card">
+      <h1>ReplayChart Pro</h1>
+      <div class="ok">الموقع يعمل الآن، ولم تعد الصفحة البيضاء من GitHub Pages.</div>
+      <p class="muted">هذه صفحة إنقاذ مؤقتة لأن GitHub Pages كان يعرض ملفات المشروع الخام من main بدل نسخة dist المبنية. الخطوة التالية هي ضبط Pages على GitHub Actions أو رفع نسخة build صحيحة.</p>
+      <div class="box">Next: Settings → Pages → Source → GitHub Actions</div>
+    </section>
+  </main>
+</body>
 </html>
