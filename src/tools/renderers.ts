@@ -1,7 +1,17 @@
-import type { DrawingObject } from '../types';
+import type { DrawingObject, FibSettings } from '../types';
 
-const fibRetracementLevels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.414, 1.618, 2, 2.618, 3.618, 4.236];
-const fibExtensionLevels = [0, 0.382, 0.618, 1, 1.272, 1.414, 1.618, 2, 2.618, 3.618, 4.236];
+const defaultFibLevels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.414, 1.618, 2, 2.618, 3.618, 4.236];
+
+const defaultFibSettings: FibSettings = {
+  levels: defaultFibLevels.map((value) => ({ value, visible: true })),
+  extendLeft: false,
+  extendRight: true,
+  reverse: false,
+  showPrices: true,
+  showPercents: true,
+  labelsPosition: 'right',
+  fillBackground: true,
+};
 
 const lineDash = (dash: string) => {
   if (dash === 'dashed') return [8, 6];
@@ -51,9 +61,22 @@ const drawArrow = (ctx: CanvasRenderingContext2D, a: [number, number], b: [numbe
 };
 
 const formatPct = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
-const fibLabel = (level: number, price: number) => `${(level * 100).toFixed(level % 1 === 0 ? 0 : 1)}%  ${price.toFixed(2)}`;
+
+const resolveFibSettings = (drawing: DrawingObject): FibSettings => ({
+  ...defaultFibSettings,
+  ...drawing.fib,
+  levels: drawing.fib?.levels?.length ? drawing.fib.levels : defaultFibSettings.levels,
+});
+
+const makeFibLabel = (settings: FibSettings, level: number, price: number) => {
+  const parts: string[] = [];
+  if (settings.showPercents) parts.push(`${(level * 100).toFixed(level % 1 === 0 ? 0 : 1)}%`);
+  if (settings.showPrices) parts.push(price.toFixed(2));
+  return parts.length ? parts.join('  ') : '';
+};
 
 const drawLabelBox = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, align: 'left' | 'right' = 'left') => {
+  if (!text) return;
   const paddingX = 5;
   const metrics = ctx.measureText(text);
   const width = metrics.width + paddingX * 2;
@@ -89,35 +112,57 @@ const drawMeasurementLabel = (
 
 const drawFibGuide = (
   ctx: CanvasRenderingContext2D,
-  levels: number[],
+  drawing: DrawingObject,
   prices: number[],
   ys: number[],
   startX: number,
   endX: number,
   labelX: number,
 ) => {
+  const settings = resolveFibSettings(drawing);
+  const visibleLevels = settings.levels.filter((level) => level.visible);
+
   ctx.save();
   ctx.setLineDash([]);
-  for (let i = 0; i < ys.length; i += 1) {
+  for (let i = 0; i < visibleLevels.length; i += 1) {
+    const level = visibleLevels[i];
     const y = ys[i];
     if (!Number.isFinite(y)) continue;
 
-    if (i > 0 && i < ys.length) {
+    if (settings.fillBackground && i > 0) {
       const prevY = ys[i - 1];
       if (Number.isFinite(prevY)) {
         ctx.save();
         ctx.globalAlpha = i % 2 === 0 ? 0.035 : 0.06;
+        ctx.fillStyle = level.color ?? drawing.style.color;
         ctx.fillRect(startX, Math.min(prevY, y), endX - startX, Math.abs(prevY - y));
         ctx.restore();
       }
     }
 
-    ctx.globalAlpha = levels[i] === 0 || levels[i] === 1 ? 0.95 : 0.72;
-    ctx.lineWidth = levels[i] === 0 || levels[i] === 1 || levels[i] === 0.618 ? 1.5 : 1;
+    ctx.save();
+    ctx.strokeStyle = level.color ?? drawing.style.color;
+    ctx.fillStyle = level.color ?? drawing.style.color;
+    ctx.globalAlpha = level.value === 0 || level.value === 1 ? 0.95 : 0.72;
+    ctx.lineWidth = level.value === 0 || level.value === 1 || level.value === 0.618 ? 1.5 : 1;
     drawLine(ctx, [startX, y], [endX, y]);
-    drawLabelBox(ctx, fibLabel(levels[i], prices[i]), Math.min(labelX, endX - 110), y - 4);
+    ctx.restore();
+
+    const label = makeFibLabel(settings, level.value, prices[i]);
+    const align = settings.labelsPosition === 'right' ? 'right' : 'left';
+    drawLabelBox(ctx, label, labelX, y - 4, align);
   }
   ctx.restore();
+};
+
+const calculateFibRange = (settings: FibSettings, anchorA: [number, number], anchorB: [number, number], width: number) => {
+  let startX = Math.min(anchorA[0], anchorB[0]);
+  let endX = Math.max(anchorA[0], anchorB[0]);
+  if (settings.extendLeft) startX = 0;
+  if (settings.extendRight) endX = width;
+  if (startX > endX) [startX, endX] = [endX, startX];
+  const labelX = settings.labelsPosition === 'right' ? endX - 6 : startX + 6;
+  return { startX, endX, labelX };
 };
 
 export const renderDrawing = (
@@ -231,12 +276,14 @@ export const renderDrawing = (
     }
     case 'fibRetracement': {
       if (!pts[1]) break;
+      const settings = resolveFibSettings(drawing);
       const [a, b] = pts;
       const [p1, p2] = drawing.points;
-      const startX = Math.min(a[0], b[0]);
-      const endX = size.width;
-      const labelX = Math.max(a[0], b[0]) + 8;
-      const prices = fibRetracementLevels.map((lvl) => p1.price + (p2.price - p1.price) * lvl);
+      const { startX, endX, labelX } = calculateFibRange(settings, a, b, size.width);
+      const visibleLevels = settings.levels.filter((level) => level.visible);
+      const fromPrice = settings.reverse ? p2.price : p1.price;
+      const toPrice = settings.reverse ? p1.price : p2.price;
+      const prices = visibleLevels.map((level) => fromPrice + (toPrice - fromPrice) * level.value);
       const ys = prices.map((price) => toXY(p2.time, price)?.[1] ?? Number.NaN);
 
       ctx.save();
@@ -244,18 +291,18 @@ export const renderDrawing = (
       drawLine(ctx, a, b);
       drawLine(ctx, [startX, a[1]], [startX, b[1]]);
       ctx.restore();
-      drawFibGuide(ctx, fibRetracementLevels, prices, ys, startX, endX, labelX);
+      drawFibGuide(ctx, drawing, prices, ys, startX, endX, labelX);
       break;
     }
     case 'fibExtension': {
       if (drawing.points.length < 3 || pts.length < 3) break;
+      const settings = resolveFibSettings(drawing);
       const [p1, p2, p3] = drawing.points;
       const [a, b, c] = pts;
-      const range = p2.price - p1.price;
-      const startX = Math.min(a[0], b[0], c[0]);
-      const endX = size.width;
-      const labelX = c[0] + 8;
-      const prices = fibExtensionLevels.map((lvl) => p3.price + range * lvl);
+      const range = settings.reverse ? p1.price - p2.price : p2.price - p1.price;
+      const { startX, endX, labelX } = calculateFibRange(settings, a, c, size.width);
+      const visibleLevels = settings.levels.filter((level) => level.visible);
+      const prices = visibleLevels.map((level) => p3.price + range * level.value);
       const ys = prices.map((price) => toXY(p3.time, price)?.[1] ?? Number.NaN);
 
       ctx.save();
@@ -263,7 +310,7 @@ export const renderDrawing = (
       drawLine(ctx, a, b);
       drawLine(ctx, b, c);
       ctx.restore();
-      drawFibGuide(ctx, fibExtensionLevels, prices, ys, startX, endX, labelX);
+      drawFibGuide(ctx, drawing, prices, ys, startX, endX, labelX);
       break;
     }
     case 'elliottImpulse': {
