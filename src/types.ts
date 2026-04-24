@@ -34,13 +34,19 @@ export type ToolType =
   | 'horizontalLine'
   | 'horizontalRay'
   | 'verticalLine'
+  | 'parallelChannel'
   | 'rectangleZone'
+  | 'arrow'
+  | 'path'
+  | 'brush'
   | 'fibRetracement'
   | 'fibExtension'
   | 'elliottImpulse'
   | 'elliottCorrection'
   | 'longPosition'
   | 'shortPosition'
+  | 'priceRange'
+  | 'dateRange'
   | 'textNote';
 
 export interface DrawingObject {
