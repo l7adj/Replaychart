@@ -21,8 +21,8 @@ const distToSegment = (p: [number, number], a: [number, number], b: [number, num
   return Math.hypot(px - cx, py - cy);
 };
 
-const fibRetracementLevels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
-const fibExtensionLevels = [0, 0.382, 0.618, 1, 1.272, 1.618, 2.618];
+const fibRetracementLevels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.414, 1.618, 2, 2.618, 3.618, 4.236];
+const fibExtensionLevels = [0, 0.382, 0.618, 1, 1.272, 1.414, 1.618, 2, 2.618, 3.618, 4.236];
 
 type DragState =
   | { type: 'handle'; id: string; index: number }
@@ -120,6 +120,8 @@ export function DrawingLayer({ chart, series }: { chart: IChartApi | null; serie
   }, [drawings, draft, previewPoint, toXY, chart, activeTool, symbol, timeframe, hoveredDrawingId, selectedDrawingId]);
 
   const hitTest = (x: number, y: number): { id: string; target: 'handle' | 'body'; index?: number } | null => {
+    const canvasWidth = canvasRef.current?.width ?? hostRef.current?.clientWidth ?? 0;
+
     for (let dIdx = drawings.length - 1; dIdx >= 0; dIdx -= 1) {
       const d = drawings[dIdx];
       if (d.hidden) continue;
@@ -172,23 +174,37 @@ export function DrawingLayer({ chart, series }: { chart: IChartApi | null; serie
           break;
         }
         case 'fibRetracement': {
-          if (!pts[1]) break;
-          const [a, b] = pts;
+          if (!pts[1] || d.points.length < 2) break;
+          const [anchorA, anchorB] = pts;
+          const [p1, p2] = d.points;
+          const startX = Math.min(anchorA[0], anchorB[0]) - HIT_PX;
+          const endX = canvasWidth + HIT_PX;
+          const onGuide = nearLine(anchorA, anchorB);
+          if (onGuide) return { id: d.id, target: 'body' };
+
           for (const lvl of fibRetracementLevels) {
-            const yy = a[1] + (b[1] - a[1]) * lvl;
-            if (Math.abs(y - yy) <= HIT_PX && x >= Math.min(a[0], b[0]) - HIT_PX && x <= Math.max(a[0], b[0]) + HIT_PX) {
+            const price = p1.price + (p2.price - p1.price) * lvl;
+            const yy = toXY(p2.time, price)?.[1];
+            if (yy !== undefined && Math.abs(y - yy) <= HIT_PX && x >= startX && x <= endX) {
               return { id: d.id, target: 'body' };
             }
           }
           break;
         }
         case 'fibExtension': {
-          if (d.points.length < 3) break;
-          const [a, b, c] = d.points;
-          const base = b.price - a.price;
+          if (d.points.length < 3 || pts.length < 3) break;
+          const [p1, p2, p3] = d.points;
+          const [a, b, c] = pts;
+          const range = p2.price - p1.price;
+          const startX = Math.min(a[0], b[0], c[0]) - HIT_PX;
+          const endX = canvasWidth + HIT_PX;
+          if (nearLine(a, b) || nearLine(b, c)) return { id: d.id, target: 'body' };
+
           for (const lvl of fibExtensionLevels) {
-            const yy = toXY(c.time, c.price + base * lvl)?.[1];
-            if (yy !== undefined && Math.abs(y - yy) <= HIT_PX) return { id: d.id, target: 'body' };
+            const yy = toXY(p3.time, p3.price + range * lvl)?.[1];
+            if (yy !== undefined && Math.abs(y - yy) <= HIT_PX && x >= startX && x <= endX) {
+              return { id: d.id, target: 'body' };
+            }
           }
           break;
         }
